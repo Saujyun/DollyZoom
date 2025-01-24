@@ -21,7 +21,7 @@ class AutoFitTextureView @JvmOverloads constructor(
     private var ratioHeight = 0
 
     fun setAspectRatio(width: Int, height: Int) {
-        require(!(width < 0 || height < 0)) { "Size cannot be negative" }
+        require(width > 0 && height > 0) { "Size cannot be negative." }
         ratioWidth = width
         ratioHeight = height
         requestLayout()
@@ -29,16 +29,27 @@ class AutoFitTextureView @JvmOverloads constructor(
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+
         val width = MeasureSpec.getSize(widthMeasureSpec)
         val height = MeasureSpec.getSize(heightMeasureSpec)
+
         if (ratioWidth == 0 || ratioHeight == 0) {
             setMeasuredDimension(width, height)
         } else {
-            if (width < height * ratioWidth / ratioHeight) {
-                setMeasuredDimension(width, width * ratioHeight / ratioWidth)
+            // 计算实际显示尺寸，保持比例
+            val ratio = ratioWidth.toFloat() / ratioHeight
+            val newWidth: Int
+            val newHeight: Int
+
+            if (width < height * ratio) {
+                newWidth = width
+                newHeight = (width / ratio).toInt()
             } else {
-                setMeasuredDimension(height * ratioWidth / ratioHeight, height)
+                newWidth = (height * ratio).toInt()
+                newHeight = height
             }
+
+            setMeasuredDimension(newWidth, newHeight)
         }
     }
 }
