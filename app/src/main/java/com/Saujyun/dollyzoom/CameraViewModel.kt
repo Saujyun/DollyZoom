@@ -18,13 +18,16 @@ class CameraViewModel(context: Context) : ViewModel() {
 
     private val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
     private lateinit var cameraCharacteristics: CameraCharacteristics
+    var maxZoom: Float = 1.0f
 
     fun setCameraId(cameraId: String) {
         cameraCharacteristics = cameraManager.getCameraCharacteristics(cameraId)
+        maxZoom = cameraCharacteristics.get(CameraCharacteristics.SCALER_AVAILABLE_MAX_DIGITAL_ZOOM) ?: 1.0f
     }
 
-    fun setZoomLevel(zoom: Float) {
-        _zoomLevel.value = zoom
+    fun adjustZoomBasedOnMovement(movement: Float) {
+        val zoomLevel = (1.0f + movement / 10.0f).coerceIn(1.0f, maxZoom)
+        _zoomLevel.value = zoomLevel
     }
 
     fun applyZoom(captureRequestBuilder: CaptureRequest.Builder, cameraCaptureSession: CameraCaptureSession) {
@@ -37,7 +40,6 @@ class CameraViewModel(context: Context) : ViewModel() {
     }
 
     private fun calculateZoomRect(zoom: Float): Rect {
-        val maxZoom = cameraCharacteristics.get(CameraCharacteristics.SCALER_AVAILABLE_MAX_DIGITAL_ZOOM) ?: 1.0f
         val sensorArraySize = cameraCharacteristics.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE) ?: return Rect()
 
         val zoomFactor = if (zoom < 1.0f) 1.0f else if (zoom > maxZoom) maxZoom else zoom

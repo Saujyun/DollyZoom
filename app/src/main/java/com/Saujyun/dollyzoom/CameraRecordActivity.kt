@@ -14,6 +14,10 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Rect
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.hardware.camera2.CameraAccessException
 import android.hardware.camera2.CameraManager
 import android.hardware.camera2.params.MeteringRectangle
@@ -47,7 +51,7 @@ import java.util.Locale
  * Created by Auntieli on 2025/1/24
  * Copyright (c) 2025 TENCENT. All rights reserved.
  */
-class CameraRecordActivity : AppCompatActivity() {
+class CameraRecordActivity : AppCompatActivity(), SensorEventListener {
     private lateinit var textureView: TextureView
     private lateinit var recordButton: Button
     private lateinit var cameraDevice: CameraDevice
@@ -62,7 +66,8 @@ class CameraRecordActivity : AppCompatActivity() {
     private var videoFile: File? = null
     private val TAG = "CameraRecordActivity"
     private val scope = CoroutineScope(Dispatchers.Main + Job())
-
+    private lateinit var sensorManager: SensorManager
+    private lateinit var accelerometer: Sensor
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_camera_record)
@@ -82,13 +87,20 @@ class CameraRecordActivity : AppCompatActivity() {
         }
 
         setupRecordButton()
+        // 初始化传感器管理器和加速度计
+        sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)!!
+
+        // 注册传感器监听器
+        sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL)
+
 
         // 监听 SeekBar 的变化
         zoomSeekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 // 更新 ViewModel 中的焦距
                 val zoomLevel = 1.0f + (progress / 100.0f) * (10.0f - 1.0f) // Assuming 1x to 10x zoom
-                cameraViewModel.setZoomLevel(zoomLevel)
+                cameraViewModel.adjustZoomBasedOnMovement(zoomLevel)
 
                 // 确保 captureRequestBuilder 和 cameraCaptureSession 已初始化
                 if (::captureRequestBuilder.isInitialized && ::cameraCaptureSession.isInitialized) {
@@ -99,6 +111,30 @@ class CameraRecordActivity : AppCompatActivity() {
             override fun onStartTrackingTouch(seekBar: SeekBar?) {}
             override fun onStopTrackingTouch(seekBar: SeekBar?) {}
         })
+    }
+
+    private var lastZ: Float = 0.0f
+
+    override fun onSensorChanged(event: SensorEvent?) {
+        event?.let {
+            if (it.sensor.type == Sensor.TYPE_ACCELEROMETER) {
+                val z = it.values[2] // 获取z轴加速度值
+                val movement = z - lastZ // 计算移动的距离
+                lastZ = z
+
+                // 调整焦距
+                cameraViewModel.adjustZoomBasedOnMovement(movement)
+
+                // 确保 captureRequestBuilder 和 cameraCaptureSession 已初始化
+                if (::captureRequestBuilder.isInitialized && ::cameraCaptureSession.isInitialized) {
+                    cameraViewModel.applyZoom(captureRequestBuilder, cameraCaptureSession)
+                }
+            }
+        }
+    }
+
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
+        // 可以忽略
     }
 
     private fun checkPermissions(): Boolean {
@@ -398,6 +434,8 @@ class CameraRecordActivity : AppCompatActivity() {
             }
         }
         mediaRecorder.release()
+        // 注销传感器监听器
+        sensorManager.unregisterListener(this)
         scope.cancel()
     }
 
