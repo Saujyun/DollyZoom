@@ -12,13 +12,16 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 
+import kotlinx.coroutines.*
+
 class CameraViewModel(context: Context) : ViewModel() {
-    private val _zoomLevel = MutableLiveData<Float>()
+    private val _zoomLevel = MutableLiveData<Float>().apply { value = 1.0f }
     val zoomLevel: LiveData<Float> get() = _zoomLevel
 
     private val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
     private lateinit var cameraCharacteristics: CameraCharacteristics
     var maxZoom: Float = 1.0f
+    private var zoomJob: Job? = null
 
     fun setCameraId(cameraId: String) {
         cameraCharacteristics = cameraManager.getCameraCharacteristics(cameraId)
@@ -26,13 +29,26 @@ class CameraViewModel(context: Context) : ViewModel() {
     }
 
     fun adjustZoomBasedOnMovement(movement: Float) {
-        val zoomLevel = (1.0f + movement / 10.0f).coerceIn(1.0f, maxZoom)
-        _zoomLevel.value = zoomLevel
+        val targetZoom = (1.0f + movement / 10.0f).coerceIn(1.0f, maxZoom)
+        smoothZoomTo(targetZoom)
+    }
+
+    private fun smoothZoomTo(targetZoom: Float) {
+        zoomJob?.cancel()
+        zoomJob = CoroutineScope(Dispatchers.Main).launch {
+            val startZoom = _zoomLevel.value ?: 1.0f
+            val steps = 20
+            val stepZoom = (targetZoom - startZoom) / steps
+            for (i in 0..steps) {
+                _zoomLevel.value = startZoom + stepZoom * i
+                delay(10) // 每步之间的延迟，确保平滑过渡
+            }
+        }
     }
 
     fun applyZoom(captureRequestBuilder: CaptureRequest.Builder, cameraCaptureSession: CameraCaptureSession) {
         try {
-            captureRequestBuilder.set(CaptureRequest.SCALER_CROP_REGION, calculateZoomRect(zoomLevel.value ?: 1.0f))
+            captureRequestBuilder.set(CaptureRequest.SCALER_CROP_REGION, calculateZoomRect(_zoomLevel.value ?: 1.0f))
             cameraCaptureSession.setRepeatingRequest(captureRequestBuilder.build(), null, null)
         } catch (e: CameraAccessException) {
             e.printStackTrace()

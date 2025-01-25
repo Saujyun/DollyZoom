@@ -31,6 +31,16 @@
             android:max="100"
             android:progress="0" />
 
+        <TextView
+            android:id="@+id/sensor_info_text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|center_horizontal"
+            android:layout_marginTop="16dp"
+            android:text="Sensor Info"
+            android:textSize="16sp"
+            android:textColor="@android:color/white" />
+
     </FrameLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

@@ -30,6 +30,7 @@ import android.view.View
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.SeekBar
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -68,6 +69,7 @@ class CameraRecordActivity : AppCompatActivity(), SensorEventListener {
     private val scope = CoroutineScope(Dispatchers.Main + Job())
     private lateinit var sensorManager: SensorManager
     private lateinit var accelerometer: Sensor
+    private lateinit var sensorInfoTextView: TextView
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_camera_record)
@@ -87,6 +89,9 @@ class CameraRecordActivity : AppCompatActivity(), SensorEventListener {
         }
 
         setupRecordButton()
+        // 获取 TextView 的引用
+        sensorInfoTextView = findViewById(R.id.sensor_info_text)
+
         // 初始化传感器管理器和加速度计
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)!!
@@ -118,9 +123,12 @@ class CameraRecordActivity : AppCompatActivity(), SensorEventListener {
     override fun onSensorChanged(event: SensorEvent?) {
         event?.let {
             if (it.sensor.type == Sensor.TYPE_ACCELEROMETER) {
+                val x = it.values[0]
+                val y = it.values[1]
                 val z = it.values[2] // 获取z轴加速度值
                 val movement = z - lastZ // 计算移动的距离
                 lastZ = z
+
 
                 // 调整焦距
                 cameraViewModel.adjustZoomBasedOnMovement(movement)
@@ -129,6 +137,11 @@ class CameraRecordActivity : AppCompatActivity(), SensorEventListener {
                 if (::captureRequestBuilder.isInitialized && ::cameraCaptureSession.isInitialized) {
                     cameraViewModel.applyZoom(captureRequestBuilder, cameraCaptureSession)
                 }
+                // 获取当前焦距
+                val zoomLevel = cameraViewModel.zoomLevel.value ?: 1.0f
+
+                // 更新 TextView
+                sensorInfoTextView.text = "x: $x, y: $y, z: $z, zoom: $zoomLevel"
             }
         }
     }
