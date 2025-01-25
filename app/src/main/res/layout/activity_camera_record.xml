@@ -4,7 +4,6 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
-
     <FrameLayout
         android:id="@+id/camera_frame_layout"
         android:layout_width="match_parent"
@@ -22,6 +21,15 @@
             android:layout_gravity="center_horizontal|bottom"
             android:layout_marginBottom="16dp"
             android:text="开始录制" />
+
+        <SeekBar
+            android:id="@+id/zoom_seekbar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom"
+            android:layout_marginBottom="80dp"
+            android:max="100"
+            android:progress="0" />
 
     </FrameLayout>
 

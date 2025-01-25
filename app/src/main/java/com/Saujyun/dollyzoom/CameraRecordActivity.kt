@@ -1,8 +1,9 @@
 package com.Saujyun.dollyzoom
 
 import android.content.pm.PackageManager
-import android.graphics.Rect
-import android.hardware.camera2.*
+import android.hardware.camera2.CameraCaptureSession
+import android.hardware.camera2.CameraDevice
+import android.hardware.camera2.CaptureRequest
 import android.media.MediaRecorder
 import android.os.Bundle
 import android.view.TextureView
@@ -12,6 +13,9 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Rect
+import android.hardware.camera2.CameraAccessException
+import android.hardware.camera2.CameraManager
 import android.hardware.camera2.params.MeteringRectangle
 import android.os.Build
 import android.os.Environment
@@ -21,10 +25,12 @@ import android.view.Surface
 import android.view.View
 import android.widget.Button
 import android.widget.FrameLayout
+import android.widget.SeekBar
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.ViewModelProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -49,6 +55,8 @@ class CameraRecordActivity : AppCompatActivity() {
     private lateinit var captureRequestBuilder: CaptureRequest.Builder
     private lateinit var mediaRecorder: MediaRecorder
     private lateinit var focusView: FocusView
+    private lateinit var zoomSeekBar: SeekBar
+    private lateinit var cameraViewModel: CameraViewModel
 
     private var isRecording = false
     private var videoFile: File? = null
@@ -62,6 +70,8 @@ class CameraRecordActivity : AppCompatActivity() {
         textureView = findViewById(R.id.texture_view)
         recordButton = findViewById(R.id.record_button)
         focusView = FocusView(this)
+        zoomSeekBar = findViewById(R.id.zoom_seekbar)
+        cameraViewModel = ViewModelProvider(this, CameraViewModelFactory(applicationContext)).get(CameraViewModel::class.java)
 
         val frameLayout = findViewById<FrameLayout>(R.id.camera_frame_layout)
         frameLayout.addView(focusView)
@@ -72,6 +82,23 @@ class CameraRecordActivity : AppCompatActivity() {
         }
 
         setupRecordButton()
+
+        // 监听 SeekBar 的变化
+        zoomSeekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                // 更新 ViewModel 中的焦距
+                val zoomLevel = 1.0f + (progress / 100.0f) * (10.0f - 1.0f) // Assuming 1x to 10x zoom
+                cameraViewModel.setZoomLevel(zoomLevel)
+
+                // 确保 captureRequestBuilder 和 cameraCaptureSession 已初始化
+                if (::captureRequestBuilder.isInitialized && ::cameraCaptureSession.isInitialized) {
+                    cameraViewModel.applyZoom(captureRequestBuilder, cameraCaptureSession)
+                }
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        })
     }
 
     private fun checkPermissions(): Boolean {
@@ -105,6 +132,7 @@ class CameraRecordActivity : AppCompatActivity() {
                 cameraManager.openCamera(cameraId, object : CameraDevice.StateCallback() {
                     override fun onOpened(camera: CameraDevice) {
                         cameraDevice = camera
+                        cameraViewModel.setCameraId(cameraId) // 设置相机 ID
                         createCameraPreviewSession()
                     }
 
@@ -170,6 +198,7 @@ class CameraRecordActivity : AppCompatActivity() {
                 override fun onConfigured(session: CameraCaptureSession) {
                     cameraCaptureSession = session
                     updatePreview()
+
                     // 设置初始对焦区域
                     setFocusArea(textureView.width / 2, textureView.height / 2)
                 }
@@ -210,6 +239,9 @@ class CameraRecordActivity : AppCompatActivity() {
                 null,
                 null
             )
+
+            // 设置初始对焦区域
+            setFocusArea(textureView.width / 2, textureView.height / 2)
         } catch (e: CameraAccessException) {
             Log.e(TAG, "Error updating preview: ${e.message}")
         }
