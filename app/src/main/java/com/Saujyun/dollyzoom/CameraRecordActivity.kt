@@ -1,23 +1,26 @@
 package com.Saujyun.dollyzoom
 
 import android.content.pm.PackageManager
-import android.hardware.camera2.CameraCaptureSession
-import android.hardware.camera2.CameraDevice
-import android.hardware.camera2.CaptureRequest
+import android.graphics.Rect
+import android.hardware.camera2.*
 import android.media.MediaRecorder
 import android.os.Bundle
 import android.view.TextureView
 import android.Manifest
 import android.content.ContentValues
 import android.content.Context
-import android.hardware.camera2.CameraAccessException
-import android.hardware.camera2.CameraManager
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.hardware.camera2.params.MeteringRectangle
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
 import android.view.Surface
+import android.view.View
 import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -45,6 +48,7 @@ class CameraRecordActivity : AppCompatActivity() {
     private lateinit var cameraCaptureSession: CameraCaptureSession
     private lateinit var captureRequestBuilder: CaptureRequest.Builder
     private lateinit var mediaRecorder: MediaRecorder
+    private lateinit var focusView: FocusView
 
     private var isRecording = false
     private var videoFile: File? = null
@@ -57,6 +61,10 @@ class CameraRecordActivity : AppCompatActivity() {
 
         textureView = findViewById(R.id.texture_view)
         recordButton = findViewById(R.id.record_button)
+        focusView = FocusView(this)
+
+        val frameLayout = findViewById<FrameLayout>(R.id.camera_frame_layout)
+        frameLayout.addView(focusView)
 
         if (checkPermissions()) {
             setupCamera()
@@ -162,6 +170,8 @@ class CameraRecordActivity : AppCompatActivity() {
                 override fun onConfigured(session: CameraCaptureSession) {
                     cameraCaptureSession = session
                     updatePreview()
+                    // 设置初始对焦区域
+                    setFocusArea(textureView.width / 2, textureView.height / 2)
                 }
 
                 override fun onConfigureFailed(session: CameraCaptureSession) {
@@ -173,8 +183,28 @@ class CameraRecordActivity : AppCompatActivity() {
         }
     }
 
+    private fun setFocusArea(x: Int, y: Int) {
+        val focusRect = calculateFocusRect(x, y)
+        captureRequestBuilder.set(CaptureRequest.CONTROL_AF_REGIONS, arrayOf(MeteringRectangle(focusRect, MeteringRectangle.METERING_WEIGHT_MAX)))
+        cameraCaptureSession.capture(captureRequestBuilder.build(), null, null)
+        focusView.setFocusArea(focusRect)
+    }
+
+    private fun calculateFocusRect(x: Int, y: Int): Rect {
+        val halfTouchWidth = 100
+        val halfTouchHeight = 100
+        val rect = Rect(
+            (x - halfTouchWidth).coerceIn(0, textureView.width - 1),
+            (y - halfTouchHeight).coerceIn(0, textureView.height - 1),
+            (x + halfTouchWidth).coerceIn(0, textureView.width - 1),
+            (y + halfTouchHeight).coerceIn(0, textureView.height - 1)
+        )
+        return rect
+    }
+
     private fun updatePreview() {
         try {
+            captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
             cameraCaptureSession.setRepeatingRequest(
                 captureRequestBuilder.build(),
                 null,
@@ -341,5 +371,27 @@ class CameraRecordActivity : AppCompatActivity() {
 
     companion object {
         private const val PERMISSIONS_REQUEST_CODE = 100
+    }
+}
+
+// 对焦框的自定义视图
+class FocusView(context: Context) : View(context) {
+    private val paint: Paint = Paint().apply {
+        color = Color.GREEN
+        style = Paint.Style.STROKE
+        strokeWidth = 5f
+    }
+    private var focusRect: Rect? = null
+
+    fun setFocusArea(area: Rect) {
+        focusRect = area
+        invalidate()
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        focusRect?.let {
+            canvas.drawRect(it, paint)
+        }
     }
 }
