@@ -36,23 +36,26 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.abs
 
 /**
  * desc:
  * Created by Auntieli on 2025/1/24
  * Copyright (c) 2025 TENCENT. All rights reserved.
  */
-class CameraRecordActivity : AppCompatActivity(), SensorEventListener {
+class CameraRecordActivity : AppCompatActivity() {
     private lateinit var textureView: TextureView
     private lateinit var recordButton: Button
     private lateinit var cameraDevice: CameraDevice
@@ -67,8 +70,6 @@ class CameraRecordActivity : AppCompatActivity(), SensorEventListener {
     private var videoFile: File? = null
     private val TAG = "CameraRecordActivity"
     private val scope = CoroutineScope(Dispatchers.Main + Job())
-    private lateinit var sensorManager: SensorManager
-    private lateinit var accelerometer: Sensor
     private lateinit var sensorInfoTextView: TextView
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -91,20 +92,12 @@ class CameraRecordActivity : AppCompatActivity(), SensorEventListener {
         setupRecordButton()
         // 获取 TextView 的引用
         sensorInfoTextView = findViewById(R.id.sensor_info_text)
-
-        // 初始化传感器管理器和加速度计
-        sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
-        accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)!!
-
-        // 注册传感器监听器
-        sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL)
-
-
         // 监听 SeekBar 的变化
         zoomSeekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 // 更新 ViewModel 中的焦距
-                val zoomLevel = 1.0f + (progress / 100.0f) * (10.0f - 1.0f) // Assuming 1x to 10x zoom
+                val zoomLevel =
+                    1.0f + (progress / 100.0f) * (10.0f - 1.0f) // Assuming 1x to 10x zoom
                 cameraViewModel.adjustZoomBasedOnMovement(zoomLevel)
 
                 // 确保 captureRequestBuilder 和 cameraCaptureSession 已初始化
@@ -116,39 +109,55 @@ class CameraRecordActivity : AppCompatActivity(), SensorEventListener {
             override fun onStartTrackingTouch(seekBar: SeekBar?) {}
             override fun onStopTrackingTouch(seekBar: SeekBar?) {}
         })
-    }
 
-    private var lastZ: Float = 0.0f
-
-    override fun onSensorChanged(event: SensorEvent?) {
-        event?.let {
-            if (it.sensor.type == Sensor.TYPE_ACCELEROMETER) {
-                val x = it.values[0]
-                val y = it.values[1]
-                val z = it.values[2] // 获取z轴加速度值
-                val movement = z - lastZ // 计算移动的距离
-                lastZ = z
-
-
-                // 调整焦距
-                cameraViewModel.adjustZoomBasedOnMovement(movement)
-
-                // 确保 captureRequestBuilder 和 cameraCaptureSession 已初始化
-                if (::captureRequestBuilder.isInitialized && ::cameraCaptureSession.isInitialized) {
-                    cameraViewModel.applyZoom(captureRequestBuilder, cameraCaptureSession)
-                }
-                // 获取当前焦距
-                val zoomLevel = cameraViewModel.zoomLevel.value ?: 1.0f
-
-                // 更新 TextView
-                sensorInfoTextView.text = "x: $x, y: $y, z: $z, zoom: $zoomLevel"
-            }
+        motionTracker = MotionTracker(this)
+        // 定期更新UI显示位置信息
+        lifecycleScope.launch {
+               while (true){
+                   updateMotionInfo()
+                   delay(10) // 每100ms更新一次
+               }
         }
     }
-
-    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
-        // 可以忽略
+    private lateinit var motionTracker: MotionTracker
+    private fun updateMotionInfo() {
+        val motion = motionTracker.getCurrentMotion()
+        sensorInfoTextView.text = """
+            位置: 
+            X: %.3f m
+            Y: %.3f m
+            Z: %.3f m
+            
+            速度:
+            X: %.3f m/s
+            Y: %.3f m/s
+            Z: %.3f m/s
+            
+            方向:
+            X: %.2f°
+            Y: %.2f°
+            Z: %.2f°
+        """.trimIndent().format(
+            motion.position.x, motion.position.y, motion.position.z,
+            motion.velocity.x, motion.velocity.y, motion.velocity.z,
+            Math.toDegrees(motion.orientation.x.toDouble()),
+            Math.toDegrees(motion.orientation.y.toDouble()),
+            Math.toDegrees(motion.orientation.z.toDouble())
+        )
     }
+
+
+    override fun onResume() {
+        super.onResume()
+        motionTracker.start()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        motionTracker.stop()
+    }
+
+
 
     private fun checkPermissions(): Boolean {
         val permissions = arrayOf(
@@ -448,7 +457,6 @@ class CameraRecordActivity : AppCompatActivity(), SensorEventListener {
         }
         mediaRecorder.release()
         // 注销传感器监听器
-        sensorManager.unregisterListener(this)
         scope.cancel()
     }
 

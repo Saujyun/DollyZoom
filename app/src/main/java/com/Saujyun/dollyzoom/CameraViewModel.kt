@@ -15,7 +15,8 @@ import androidx.lifecycle.ViewModel
 import kotlinx.coroutines.*
 
 class CameraViewModel(context: Context) : ViewModel() {
-    private val _zoomLevel = MutableLiveData<Float>().apply { value = 1.0f }
+    private val ZOOM_DEFAULT = 3.0f
+    private val _zoomLevel = MutableLiveData<Float>().apply { value = ZOOM_DEFAULT }
     val zoomLevel: LiveData<Float> get() = _zoomLevel
 
     private val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
@@ -29,26 +30,29 @@ class CameraViewModel(context: Context) : ViewModel() {
     }
 
     fun adjustZoomBasedOnMovement(movement: Float) {
-        val targetZoom = (1.0f + movement / 10.0f).coerceIn(1.0f, maxZoom)
+        val targetZoom = (ZOOM_DEFAULT - movement * 10.0f).coerceIn(1.0f, maxZoom)
+        if (targetZoom - (_zoomLevel.value ?: 1.0f) < 0.1) {
+            return
+        }
         smoothZoomTo(targetZoom)
     }
 
     private fun smoothZoomTo(targetZoom: Float) {
         zoomJob?.cancel()
         zoomJob = CoroutineScope(Dispatchers.Main).launch {
-            val startZoom = _zoomLevel.value ?: 1.0f
+            val startZoom = _zoomLevel.value ?: ZOOM_DEFAULT
             val steps = 20
             val stepZoom = (targetZoom - startZoom) / steps
             for (i in 0..steps) {
                 _zoomLevel.value = startZoom + stepZoom * i
-                delay(10) // 每步之间的延迟，确保平滑过渡
+//                delay(10) // 每步之间的延迟，确保平滑过渡
             }
         }
     }
 
     fun applyZoom(captureRequestBuilder: CaptureRequest.Builder, cameraCaptureSession: CameraCaptureSession) {
         try {
-            captureRequestBuilder.set(CaptureRequest.SCALER_CROP_REGION, calculateZoomRect(_zoomLevel.value ?: 1.0f))
+            captureRequestBuilder.set(CaptureRequest.SCALER_CROP_REGION, calculateZoomRect(_zoomLevel.value ?: ZOOM_DEFAULT))
             cameraCaptureSession.setRepeatingRequest(captureRequestBuilder.build(), null, null)
         } catch (e: CameraAccessException) {
             e.printStackTrace()
@@ -58,7 +62,7 @@ class CameraViewModel(context: Context) : ViewModel() {
     private fun calculateZoomRect(zoom: Float): Rect {
         val sensorArraySize = cameraCharacteristics.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE) ?: return Rect()
 
-        val zoomFactor = if (zoom < 1.0f) 1.0f else if (zoom > maxZoom) maxZoom else zoom
+        val zoomFactor = if (zoom < 1.0f) ZOOM_DEFAULT else if (zoom > maxZoom) maxZoom else zoom
 
         val cropWidth = (sensorArraySize.width() / zoomFactor).toInt()
         val cropHeight = (sensorArraySize.height() / zoomFactor).toInt()
