@@ -61,6 +61,13 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.constraintlayout)
+    // ML Kit Object Detection
+    implementation("com.google.mlkit:object-detection:17.0.0")
+    // ML Kit Object Detection Custom
+    implementation("com.google.mlkit:object-detection-custom:17.0.0")
+    implementation("org.jetbrains.kotlin:kotlin-stdlib:1.6.10")
+    implementation(libs.androidx.camera.core)
+    implementation(libs.androidx.camera.lifecycle)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

@@ -11,6 +11,7 @@ import android.hardware.camera2.CaptureRequest
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
+import com.google.mlkit.vision.common.InputImage
 
 import kotlinx.coroutines.*
 
@@ -23,6 +24,24 @@ class CameraViewModel(context: Context) : ViewModel() {
     private lateinit var cameraCharacteristics: CameraCharacteristics
     var maxZoom: Float = 1.0f
     private var zoomJob: Job? = null
+    private val objectTracker = ObjectTracker(context)
+
+    fun processFrame(image: InputImage) {
+        objectTracker.trackObject(image) { result ->
+            if (result.objectDetected) {
+                // 根据物体大小比例调整焦距
+                adjustZoomBasedOnObjectSize(result.sizeRatio)
+            }
+        }
+    }
+
+    private fun adjustZoomBasedOnObjectSize(sizeRatio: Float) {
+        // 计算目标焦距
+        // 当物体变大时（相机靠近），减小焦距
+        // 当物体变小时（相机远离），增加焦距
+        val targetZoom = (1.0f / sizeRatio).coerceIn(1.0f, maxZoom)
+        smoothZoomTo(targetZoom)
+    }
 
     fun setCameraId(cameraId: String) {
         cameraCharacteristics = cameraManager.getCameraCharacteristics(cameraId)

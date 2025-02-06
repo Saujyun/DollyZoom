@@ -1,60 +1,39 @@
 package com.Saujyun.dollyzoom
 
-import android.content.pm.PackageManager
-import android.hardware.camera2.CameraCaptureSession
-import android.hardware.camera2.CameraDevice
-import android.hardware.camera2.CaptureRequest
-import android.media.MediaRecorder
-import android.os.Bundle
-import android.view.TextureView
 import android.Manifest
 import android.content.ContentValues
 import android.content.Context
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.Rect
-import android.hardware.Sensor
-import android.hardware.SensorEvent
-import android.hardware.SensorEventListener
-import android.hardware.SensorManager
-import android.hardware.camera2.CameraAccessException
-import android.hardware.camera2.CameraManager
+import android.content.pm.PackageManager
+import android.graphics.*
+import android.hardware.camera2.*
 import android.hardware.camera2.params.MeteringRectangle
+import android.media.MediaRecorder
 import android.os.Build
+import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
+import android.util.Size
 import android.view.Surface
+import android.view.TextureView
 import android.view.View
-import android.widget.Button
-import android.widget.FrameLayout
-import android.widget.SeekBar
-import android.widget.TextView
-import android.widget.Toast
+import android.widget.*
+import androidx.annotation.OptIn
 import androidx.appcompat.app.AppCompatActivity
+import androidx.camera.core.*
+import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import com.google.mlkit.vision.common.InputImage
+import kotlinx.coroutines.*
 import java.io.File
 import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import kotlin.math.abs
+import java.util.*
+import kotlin.math.pow
+import kotlin.math.sqrt
 
-/**
- * desc:
- * Created by Auntieli on 2025/1/24
- * Copyright (c) 2025 TENCENT. All rights reserved.
- */
 class CameraRecordActivity : AppCompatActivity() {
     private lateinit var textureView: TextureView
     private lateinit var recordButton: Button
@@ -71,6 +50,8 @@ class CameraRecordActivity : AppCompatActivity() {
     private val TAG = "CameraRecordActivity"
     private val scope = CoroutineScope(Dispatchers.Main + Job())
     private lateinit var sensorInfoTextView: TextView
+    private lateinit var motionTracker: MotionTracker
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_camera_record)
@@ -87,6 +68,7 @@ class CameraRecordActivity : AppCompatActivity() {
         if (checkPermissions()) {
             setupCamera()
             setupMediaRecorder()
+            setupImageAnalysis()
         }
 
         setupRecordButton()
@@ -113,13 +95,15 @@ class CameraRecordActivity : AppCompatActivity() {
         motionTracker = MotionTracker(this)
         // 定期更新UI显示位置信息
         lifecycleScope.launch {
-               while (true){
-                   updateMotionInfo()
-                   delay(10) // 每100ms更新一次
-               }
+            while (true) {
+                updateMotionInfo()
+                delay(100) // 每100ms更新一次
+            }
         }
+
+        startCamera()
     }
-    private lateinit var motionTracker: MotionTracker
+
     private fun updateMotionInfo() {
         val motion = motionTracker.getCurrentMotion()
         sensorInfoTextView.text = """
@@ -146,7 +130,6 @@ class CameraRecordActivity : AppCompatActivity() {
         )
     }
 
-
     override fun onResume() {
         super.onResume()
         motionTracker.start()
@@ -156,8 +139,6 @@ class CameraRecordActivity : AppCompatActivity() {
         super.onPause()
         motionTracker.stop()
     }
-
-
 
     private fun checkPermissions(): Boolean {
         val permissions = arrayOf(
@@ -462,6 +443,58 @@ class CameraRecordActivity : AppCompatActivity() {
 
     companion object {
         private const val PERMISSIONS_REQUEST_CODE = 100
+    }
+    private var imageAnalyzer: ImageAnalysis? = null
+
+    @OptIn(ExperimentalGetImage::class)
+    private fun setupImageAnalysis() {
+        imageAnalyzer = ImageAnalysis.Builder()
+            .setTargetResolution(Size(1280, 720))
+            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            .build()
+            .also { analysis ->
+                analysis.setAnalyzer(
+                    ContextCompat.getMainExecutor(this)
+                ) { imageProxy ->
+                    val mediaImage = imageProxy.image
+                    if (mediaImage != null) {
+                        val image = InputImage.fromMediaImage(
+                            mediaImage,
+                            imageProxy.imageInfo.rotationDegrees
+                        )
+                        // 处理图像
+                        cameraViewModel.processFrame(image)
+                    }
+                    imageProxy.close()
+                }
+            }
+    }
+
+    private fun startCamera() {
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+        cameraProviderFuture.addListener({
+            val cameraProvider = cameraProviderFuture.get()
+
+            // 预览用例
+            val preview = Preview.Builder().build()
+
+            // 设置相机
+            val cameraSelector = CameraSelector.Builder()
+                .requireLensFacing(CameraSelector.LENS_FACING_BACK)
+                .build()
+
+            try {
+                cameraProvider.unbindAll()
+                cameraProvider.bindToLifecycle(
+                    this,
+                    cameraSelector,
+                    preview,
+                    imageAnalyzer
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "Camera binding failed", e)
+            }
+        }, ContextCompat.getMainExecutor(this))
     }
 }
 
